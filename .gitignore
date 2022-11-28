@@ -1,5 +1,6 @@
 # ------ project ignores --------
 
+data/
 original_data/
 generated_data/
 config.py
