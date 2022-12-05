@@ -9,6 +9,7 @@ begin
 	using DataFrames
 	using StatsBase
 	using LinearAlgebra
+	using LazyArrays
 	using Random:seed!
 	using CSV
 	using Distributions
@@ -16,10 +17,88 @@ begin
 	using Turing
 	using Plots
 	using StatsPlots
+	using Base.MathConstants
+	using StatsFuns: logistic
+	using ParetoSmooth
+
 end
+
+# ╔═╡ d8f23e60-0660-4f8e-85f1-ac644b885622
+md"""
+# Propensão de voto feminino à Direita
+## Eleições Presidenciais Brasileiras - Segundo Turno
+
+##### Autor: Henrique Pougy
+##### Disciplina: Bayesian Statistics
+##### Orientador: Jose Eduardo Storopoli
+
+
+Neste notebook implementamos um modelo bayesiano de propensão de voto para o Segundo Turno das eleições Presidenciais brasileiras de 2022, como foco na cidade de São Paulo (uma expansão do estudo para todo o Brasil estão em desenvolvimento).
+
+O modelo testa a hipótese, fortemente aventada pela mídia e também explorada pela campanha do candidato Luís Inácio Lula da Silva de que havia uma propensão negativa do voto feminino no candidato Jair Bolsonaro. 
+
+Esta propensão negativa se explicaria por uma aversão causada no eleitorado feminino pelas atitudes e visão de mundo do candidato Jair Bolsonaro, caracterizadas pela mídia como de viés "machista". Neste cenário, o eleitorado feminino, por seu vínculo identitário  de gênero, tenderia portanto a ter uma propensão menor em votar no candidato.
+
+Os dados analisados foram obtidos do Portal de Dados Abertos do TSE (https://dadosabertos.tse.jus.br/) e consistem em dois datasets distintos:
+
+* Perfil do eleitorado, onde obtivemos as variáveis relacionadas à composição sociodemográfica das zonas eleitorais da cidade de São Paulo.
+* Boletins de urna, onde a quantidade de votos no candidato Jair Bolsonaro, por zona eleitoral da cidade de São Paulo (além da proporção de abstenções na zona) foi obtida.
+
+##### Variável tratamento:
+
+* Proporção de mulheres na zona eleitoral: mede a proporção de eleitoras do gênero feminino na Zona Eleitoral, de acordo com o perfil do eleitorado fornecido pelo TSE;
+
+##### Variáveis independentes:
+
+* prop_abstencao: proporção de abstenções na Zona Eleitoral, de acordo com os boletins de urna
+* prop_superior_completo: proporção de eleitores com ensino superior completo, de acordo com o perfil do eleitorado da zona eleitoral
+* prop_sem_fundametal: proporção de eleitores com formação escolar até o ensino fundamental (mas sem completá-lo), de acordo com o perfil do eleitorado da zona eleitoral
+* prop_mais_60_anos: proporção de eleitores com mais de 60 anos de idade, de acordo com o perfil do eleitorado da zona eleitoral
+* prop_menos_25_anos: proporção de eleitores com menos de 25 anos de idade, de acordo com o perfil do eleitorado da zona eleitoral
+
+##### Variável dependente (y):
+
+* prop_votos_bolsonaro: proporção de votos no candidato Jair Bolsonaro na zona eleitoral, de acordo com os boletins de urna (usada no modelo de Regressão Linear)
+* qt_votos_bolsonaro: quantidade de votos no candidato Jair Bolsonaro na zona eleitoral, de acordo com os boletins de urna (usada nos modelos para dados de contagem - Poisson e Binomial Negativa)
+
+
+### Resultados:
+
+O modelo de regressão linear nos permite refutar a hipótese de propensão negatia do voto feminino em Jair Bolsonaro, tendo-se em vista que o coeficiente para a variável tratamento cruza o eixo zero no intervalo de confiabilidade de 95%.
+
+Adicionalmente, cumpre assinalar o forte tamanho de efeito positivo sobre a proporção de eleitores com mais de 60 anos sobre a variável dependente, confirmando a suspeita de que eleitores mais velhos tendem a ser mais conservadores e, portanto, votar mais à direita.
+
+Por fim, a proporção de abstenções na zona eleitoral apresenta coeficiente negativo, indicando que as zonas com maior proporção de abstenções tiveram também maior proporção de votos no candidato Luís Inácio Lula da Silva. Isto confirma a suspeita, durante a eleição, de que as abstenções prejudicariam o candidato.
+
+
+### Discussão:
+
+Ajustamos também um modelo de Regressão de Poisson, utilizando como variável dependente a quantidade de votos no candidato Jair Bolsonaro.
+
+No que diz respeito à variável tratamento, o modelo apresenta coeficiente positivo, mas de baixa magnitude, indicando que um aumento de 1 desvio-padrão na proporção de mulheres na zona eleitoral implicaria em um aumento de apenas 2% na quantidade de votos no candidato Jair Bolsonaro. Cumpre ressaltar que, apesar desta mudança no coeficiente, que passou a ser significativo, ainda assim a hipótese de propensão negativa do eleitorado feminino a votar no candidato Jair Bolsonaro manteve-se refutada.
+
+Quanto ao efeito negativo das abstenções, este também foi encontrado, assinalando uma redução de em média 5% na quantidade de votos no candidato para cada aumento de 1 desvio-padrão na proporção de abstenções na zona eleitoral. Manteve-se também o forte coeficiente para o eleitorado idoso (mais de 60 anos). Cumpre assinalar a surpreendente magnitude do coeficiente para o eleitorado de idade inferior a 25 anos, que, no modelo original, não tinha se mostrado significativo.
+
+### Limites:
+
+Infelizmente, por questões técnicas, não pudemos comparar a performance dos modelos. Além disso, tentamos ajustar um modelo de contagem robusto (binomial negativa), que no entanto também falhou por questões técnicas.
+
+Por fim, cumpre ressaltar que o Prior Predictive Check do modelo de regressão linear indicou previsões impossíveis do modelo (ainda que raras). Em uma segunda iteração, talvez cumpra implementar prioris mais informativas.
+
+
+"""
+
+# ╔═╡ 1c1daf69-9500-4185-a0bd-d7e3aa51995c
+md"# Código"
+
+# ╔═╡ 16ee01b2-60d8-40b9-9726-313cdd3c4f50
+md"Ajustando a semente para replicabilidade"
 
 # ╔═╡ 7c04f8e4-a0c1-4d1e-a2da-a5d593dddad0
 seed!(42)
+
+# ╔═╡ c798cf29-23ce-4b49-8e21-21841a069ab0
+md"Carregando os dados para modelagem"
 
 # ╔═╡ 7dbab6e3-096e-44b8-8a01-e0ee49f9f834
 path_csv = joinpath("data", "dados_modelagem", "dados_modelagem_final.csv")
@@ -27,8 +106,14 @@ path_csv = joinpath("data", "dados_modelagem", "dados_modelagem_final.csv")
 # ╔═╡ 3d73283e-57c0-4467-84bb-51342af36cbd
 df = CSV.read(path_csv, DataFrame)
 
+# ╔═╡ d94fc354-12f4-40fe-adb2-717336b562d5
+md"Verificando se os tipos de dados estão corretos"
+
 # ╔═╡ 3632c05c-688e-4c4a-a540-5e8fc7224892
 eltype.(eachcol(df))
+
+# ╔═╡ 02b75f7c-ad1e-48dc-9c1c-d7f426df7863
+md"Removendo o identificador único da zona"
 
 # ╔═╡ 4deeac10-7862-468e-879c-64da3a4355e8
 nr_zona = select(df, :nr_zona)
@@ -37,20 +122,37 @@ nr_zona = select(df, :nr_zona)
 select!(df, Not([:nr_zona]))
 
 
+# ╔═╡ 7803328e-1158-4413-966f-b63e3f2bcb9c
+md"Descrevendo o dataset - verifica-se que não há missings e os valores das variáveis independentes estão no range entre 0 e 1, pois indicam proporções."
+
 # ╔═╡ d245316e-48db-4b7b-980e-5396c7292038
 describe(df) 
 
+# ╔═╡ aa2dfd7f-0ad4-430a-a37c-5d8fd0e2e491
+md"Agora, separamos a variável dependente das independentes e normalizamos ambas."
+
 # ╔═╡ b1542b95-b996-4d5a-9d10-a44777fb4242
 begin
-	X = select(df, Not([:prop_votos_bolsonaro])) |> Matrix
+	X = select(df, Not([:prop_votos_bolsonaro, :qt_votos_bolsonaro])) |> Matrix
 	X = standardize(ZScoreTransform, X; dims=1)
 end
 
 # ╔═╡ da5c7a97-53dc-47f5-add9-9d0387d9d208
 begin
-	y = df[:, :prop_votos_bolsonaro] |> float
-	y = standardize(ZScoreTransform, y; dims=1)
+	y_lin_reg = df[:, :prop_votos_bolsonaro] |> float
+	y_lin_reg = standardize(ZScoreTransform, y_lin_reg; dims=1)
 end
+
+# ╔═╡ 67a41e31-993c-46da-82fd-7384e3b3edbb
+md"""
+### Regressão Linear
+
+
+Na célula abaixo, especificamos o modelo de regressão linear.
+
+Para as priores dos parâmetros, utilizamos priores robustas, com a distribuição T, com exceção do desvio-padrão, que deve ser maior que zero. Para ele, utilizamos uma exponencial centrada em 1 como priori.
+
+"""
 
 # ╔═╡ 03260756-a291-43d9-9cd7-8c9cf9050bbb
 @model function linear_regression(X, y; predictors=size(X, 2))
@@ -64,18 +166,26 @@ end
     # likelihood
 	#usa MVNormal para evitar for loop
 	μ = α .+ X * β
+	# σ^2 * I cria a matriz de covariância
 	y ~ MvNormal(μ, σ^2 * I)
     return (; y, α, β, σ)
 end
 
 # ╔═╡ e556c766-546f-4964-bfe4-aca637f2e334
-model = linear_regression(X, y; predictors = size(X, 2))
+model_lin_reg = linear_regression(X, y_lin_reg; predictors = size(X, 2))
+
+# ╔═╡ 0ef0e2ba-aa0e-4ce0-b8f7-84ecaad8be6d
+md"""
+##### Prior Predictive check
+
+A seguir, amostramos do modelo sem condicionarmos a função de verossimilhança aos dados: ou seja, fazemos uma amostragem das distribuições a priori.
+"""
 
 # ╔═╡ f8d4d7e4-fef6-4614-89fa-144d253b4d0d
-prior_chain = sample(model, Prior(), 2_000)
+prior_chain = sample(model_lin_reg, Prior(), 2_000)
 
-# ╔═╡ 2a632f20-ace6-4612-b207-581be8d429d5
-summarystats(prior_chain)
+# ╔═╡ 65839ad5-778d-467f-9469-a1b07b912c32
+md"A função abaixo formata o resultado dos coeficientes da corrente de Markov"
 
 # ╔═╡ 9d09c373-b30f-4aa2-80a4-05c3f5bda7c4
  function coefs_chain(chain)
@@ -92,40 +202,223 @@ summarystats(prior_chain)
        end
 
 
+# ╔═╡ ef2f57cb-555b-4049-9d3a-f05d6a9071b6
+md"Verificamos que as prioris são bem pouco informativas, permitindo tamanhos de efeito bastante grandes e divergentes."
+
 # ╔═╡ 7bcb61c6-5d41-4ee9-a399-f8f9599afd52
 coefs_chain(prior_chain)
 
+# ╔═╡ 36f9c011-dee6-4780-96fb-f8cfc2944588
+md"O caráter pouco informativo das prioris se manifesta em suas predições, que permitem valores impossíveis para Y, ainda que raros (por exemplo, menores que 0 ou maiores do que 1)"
+
 # ╔═╡ c0552627-8333-4d6a-91fd-0dd93e137ae3
-y_missing = similar(y, Missing)
+# Make a prediction given an input vector.
+function prediction(chain, x)
+    p = get_params(chain[200:end, :, :])
+    targets = p.α' .+ x * reduce(hcat, p.β)'
+    return vec(mean(targets; dims=2))
+end
 
 # ╔═╡ e61ec369-b681-48db-b7da-5ff64d7eefc8
-model_missing = model(X, y_missing)
+histogram(prediction(prior_chain, X))
 
-# ╔═╡ b849eece-5ab4-4fbd-892e-8983de535883
-predict(model_missing, prior_chain)
+# ╔═╡ e00baae3-cecd-4483-ab04-f41016b2838d
+md"""
+##### Ajuste do modelo
+
+Na célula a seguir condicionamos o modelo aos dados utilizando o amostrador NUTS, com 4 correntes de Markov paralelas e mil amostras por corrente.
+"""
 
 # ╔═╡ 59f2244d-32d2-41ab-be74-ca17a35ff8a1
-posterior_chain = sample(model, NUTS(),  MCMCThreads(), 1_000, 4)
+posterior_chain = sample(model_lin_reg, NUTS(),  MCMCThreads(), 1_000, 4)
+
+# ╔═╡ 67cbfef8-e380-4eee-9d13-9d4b2f07b2a6
+md"""
+#### Qualidade do ajuste
+
+###### RHAT
+
+Como podemos ver abaixo, as correntes se misturaram bem: todos os rhats estão acima de 1 e abaixo de 1.05.
+"""
 
 # ╔═╡ 6f50e97d-a6a5-4cc7-9915-9a14b161ade1
-select(summarystats(posterior_chain)|>DataFrame, [:parameters, :mean, :std,
-									:rhat])
+select(summarystats(posterior_chain)|>DataFrame, [:parameters,:rhat])
+
+# ╔═╡ e166b489-ca4c-438f-b8f9-d3f0ca9467bd
+md"""
+
+###### Plotagem das correntes
+
+A plotagem abaixo permite verificar que, para cada parâmetro, as 4 correntes convergiram. Verifica-se que não há qualquer tendência entre as séries (elas permanecem estacionárias) e que nenhuma corrente é significativamente divergente das demais.
+"""
+
+# ╔═╡ fbb3d17e-c1e8-4ce8-ac7f-9f89f3f8f7b0
+plot(posterior_chain; colordim=:chain, dpi=300)
+
+# ╔═╡ 79b1269a-1663-4019-becb-26a7ee1b87c4
+md"""
+Por fim, verificamos que o acceptance rate médio das propostas do amostrador está acima de 85% e que a profundidade média da árvore está abaixo de 5.
+"""
 
 # ╔═╡ 1efc35f9-41fe-44ab-963e-70232331b982
-select(permutedims(summarize(posterior_chain, sections=[:internals])|>DataFrame,1),
-	[:parameters, :acceptance_rate, :tree_depth])[1:3, :]
+rename(select(permutedims(summarize(posterior_chain, sections=[:internals])|>DataFrame,1),
+	[:parameters, :acceptance_rate, :tree_depth])[1:3, :], :parameters=>:measurements)
+
+# ╔═╡ 4b9f2e25-e748-4063-9774-543d064916b0
+md"""
+#### Coeficientes - Regressão Linear
+
+
+Abaixo listamos os coeficientes da Regressão Linear.
+
+Eles estão comentados me maiores detalhes no início do notebook.
+
+"""
+
+# ╔═╡ 0d8b65a7-21ab-4b3e-82d0-73876857a571
+select(summarystats(posterior_chain)|>DataFrame, [:parameters, :mean, :std])
+
+# ╔═╡ b598bbe0-6eb1-4700-a820-cd1d28d9e436
+md"""
+##### Intervalo de confiabilidade
+
+Abaixo detalhamos o intervalo de confiabilidade de 95% dos coeficientes (não confundir com intervalo de confiança!)
+
+"""
 
 # ╔═╡ 1f08c080-5dec-4e5f-8288-757ea28a058d
 coefs_chain(posterior_chain)
 
-# ╔═╡ 73ef09db-e52c-444b-a61a-2e978b8dca6b
-plot(posterior_chain; colordim=:chain, dpi=300)
+# ╔═╡ b81c2ac4-0455-4e88-af09-4d185d643fd2
+md"""
+### Modelos alternativos
 
-# ╔═╡ 59d924cd-e936-4118-9310-5e12ecc2331f
-plot(posterior_chain; colordim=:parameter, dpi=300)
+Nas células abaixo, ajustamos os modelos alternativos:
 
-# ╔═╡ 89bfe70b-da73-4e47-8ff3-9f9c981de362
+* Regressão de Poisson: treinamento obteve sucesso, com RHAT superior a 1 e inferior a 1.05 para todos os parâmetros e com correntes estacionárias.
 
+* Regressão Binomial Negativa: houve instabilidade numérica (parâmetro r < 0), apesar de implementação da função de verossimilhança que trouxemos, que buscava resolver esse problema.
+"""
+
+# ╔═╡ 92fbb4ed-1abf-42c2-9742-514c1c124641
+md"""**Y** para dados de contagem: quantidade de votos"""
+
+# ╔═╡ 7e8e54ed-662c-42f7-8905-4fff8bbf240d
+begin
+	y_poisson = df[:, :qt_votos_bolsonaro] |> float
+end
+
+# ╔═╡ 8dde6c28-d6aa-450c-a01a-73d7e91c0b9a
+count(ismissing, y_poisson)
+
+# ╔═╡ ea7068a7-ca32-4564-a076-4e94c3553567
+md"""
+#### Modelo de Poisson
+
+Especificação do modelo
+"""
+
+# ╔═╡ b794bced-05c4-402b-a19c-6b6ec86abfd8
+@model function poisson_regression(X, y; predictors=size(X, 2))
+    # priors
+	#priores robustas com T-distribution
+    α ~ TDist(3) * 2.5
+    β ~ filldist(TDist(3) * 2.5, predictors)
+
+	#nao vou usar array dist
+	#para poder usar paretto smooth
+	for i in eachindex(y)
+        y[i] ~ LogPoisson(α + X[i, :] ⋅ β)
+    end
+
+    return (; y, α, β)
+end
+
+# ╔═╡ f756a2f8-ce42-48a1-bd11-84e4d57d16e4
+model_poisson = poisson_regression(X, y_poisson; predictors=size(X, 2))
+
+# ╔═╡ 27e47916-4169-4a27-a7a7-5aaf37887b92
+posterior_poisson = sample(model_poisson, NUTS(),  MCMCThreads(), 1_000, 4)
+
+# ╔═╡ 00a8d58b-d878-4fe1-919a-26368ee6ed43
+md"""
+#### Qualidade do ajuste:
+
+* Rhat: >1 e < 1.05
+
+* Correntes estacionárias
+
+* Acceptance rate > 0.85
+"""
+
+# ╔═╡ d75c2f29-f068-477e-a8e6-434163035e8d
+select(summarystats(posterior_chain)|>DataFrame, [:parameters,:rhat])
+
+# ╔═╡ c58edcd2-d039-4d1f-bd0e-01e88bea7aea
+rename(select(permutedims(summarize(posterior_poisson, sections=[:internals])|>DataFrame,1),
+	[:parameters, :acceptance_rate, :tree_depth])[1:3, :], :parameters=>:metrics)
+
+# ╔═╡ 501b1080-0cb5-4236-a5af-38dab7ec7342
+plot(posterior_poisson; colordim=:chain, dpi=300)
+
+# ╔═╡ f886f003-7fc2-4721-9b81-d6a666889a1c
+md"""
+#### Coeficientes Poisson:
+
+Coeficientes em log-likelihood e transformados (e^coef) para interpretação.
+"""
+
+# ╔═╡ 4eba55f2-6598-4026-b820-ce1cc1f3686c
+coefs_poisson = coefs_chain(posterior_poisson)
+
+# ╔═╡ c929d097-561d-4cee-a9f8-ea79d956fad9
+transform(coefs_poisson, names(coefs_poisson, r"^\d") .=> ByRow(x -> e^x), renamecols=false)
+
+# ╔═╡ 6295d3c3-89ae-4c4c-83c2-55612e9f5528
+md"""
+#### Tentativa para Binomial Negativa e LOO com Paretto Smoothing
+
+Abaixo houve problemas de estabilidade numérica no modelo de binomial negativa.
+
+O Leave One Out Cross Validation com Paretto Smoothing também falhou (por alguma razão, ele não está aceitando o modelo como parâmetro).
+"""
+
+# ╔═╡ 556e178a-4cec-4e73-bb4b-f7e294edb4e7
+# alternative parameterization
+function NegativeBinomial2(μ, ϕ)
+    p = 1 / (1 + μ / ϕ)
+    p = p > 0 ? p : 1e-4 # numerical stability
+    r = ϕ
+    return NegativeBinomial(r, p)
+end
+
+# ╔═╡ 424c0e5a-d010-49ec-90cb-880c8fbec937
+@model function negative_binomial_regression(X, y; predictors=size(X, 2))
+    # priors
+    α ~ TDist(3) * 2.5
+    β ~ filldist(TDist(3) * 2.5, predictors)
+    ϕ⁻ ~ Gamma(0.01, 0.01)
+    ϕ = 1 / ϕ⁻
+
+    # likelihood
+    for i in eachindex(y)
+        y[i] ~ NegativeBinomial2(exp(α + X[i, :] ⋅ β), ϕ)
+    end
+    return (; y, α, β, ϕ)
+end
+
+
+# ╔═╡ 788e6138-9512-4e06-b201-4fe60e21d71b
+model_neg_bin = negative_binomial_regression(X, y_poisson; predictors=size(X, 2))
+
+# ╔═╡ 842c5416-598e-4f36-bf47-6ae028ca3a62
+posterior_neg_bin = sample(model_neg_bin, NUTS(),  MCMCThreads(), 1_000, 4)
+
+# ╔═╡ 24b15ad7-96cf-4da4-9de8-a46b83fc83f7
+loo_poisson = loo(model_poisson, posterior_poisson)
+
+# ╔═╡ 151996e2-0e8e-4dd9-940a-5491cf51e457
+loo_lin_regr = loo(model_lin_reg, posterior_chain)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -133,11 +426,14 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MCMCChains = "c7f686f2-ff18-58e9-bc7b-31028e88f75d"
+ParetoSmooth = "a68b5a21-f429-434e-8bfa-46b447300aac"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 
@@ -145,9 +441,12 @@ Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 CSV = "~0.10.7"
 DataFrames = "~1.4.3"
 Distributions = "~0.25.79"
+LazyArrays = "~0.22.12"
 MCMCChains = "~5.5.0"
+ParetoSmooth = "~0.2.0"
 Plots = "~1.36.6"
 StatsBase = "~0.33.21"
+StatsFuns = "~1.0.1"
 StatsPlots = "~0.15.4"
 Turing = "~0.22.0"
 """
@@ -241,11 +540,29 @@ git-tree-sha1 = "c46fb7dd1d8ca1d213ba25848a5ec4e47a1a1b08"
 uuid = "30b0a656-2188-435a-8636-2ec0e6a096e2"
 version = "0.1.26"
 
+[[ArrayInterfaceOffsetArrays]]
+deps = ["ArrayInterface", "OffsetArrays", "Static"]
+git-tree-sha1 = "3d1a9a01976971063b3930d1aed1d9c4af0817f8"
+uuid = "015c0d05-e682-4f19-8f0a-679ce4c54826"
+version = "0.1.7"
+
+[[ArrayInterfaceStaticArrays]]
+deps = ["Adapt", "ArrayInterface", "ArrayInterfaceCore", "ArrayInterfaceStaticArraysCore", "LinearAlgebra", "Static", "StaticArrays"]
+git-tree-sha1 = "f12dc65aef03d0a49650b20b2fdaf184928fd886"
+uuid = "b0d46f97-bff5-4637-a19a-dd75974142cd"
+version = "0.1.5"
+
 [[ArrayInterfaceStaticArraysCore]]
 deps = ["Adapt", "ArrayInterfaceCore", "LinearAlgebra", "StaticArraysCore"]
 git-tree-sha1 = "93c8ba53d8d26e124a5a8d4ec914c3a16e6a0970"
 uuid = "dd5226c6-a4d4-4bc7-8575-46859f9c95b9"
 version = "0.1.3"
+
+[[ArrayLayouts]]
+deps = ["FillArrays", "LinearAlgebra", "SparseArrays"]
+git-tree-sha1 = "2da56525d2d60e9b205c788e3b61b7aed5e721c6"
+uuid = "4c555306-a7a7-4459-81d9-ec55ddd5c99a"
+version = "0.8.15"
 
 [[Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -261,6 +578,12 @@ deps = ["Dates", "IntervalSets", "IterTools", "RangeArrays"]
 git-tree-sha1 = "1dd4d9f5beebac0c03446918741b1a03dc5e5788"
 uuid = "39de3d68-74b9-583c-8d2d-e117c070f3a9"
 version = "0.4.6"
+
+[[AxisKeys]]
+deps = ["AbstractFFTs", "ChainRulesCore", "CovarianceEstimation", "IntervalSets", "InvertedIndices", "LazyStack", "LinearAlgebra", "NamedDims", "OffsetArrays", "Statistics", "StatsBase", "Tables"]
+git-tree-sha1 = "d6ff375e8229819ef8e443b25009091e0e88eb24"
+uuid = "94b1ba4f-4ee9-5380-92f1-94cde586c3c5"
+version = "0.1.25"
 
 [[BangBang]]
 deps = ["Compat", "ConstructionBase", "Future", "InitialValues", "LinearAlgebra", "Requires", "Setfield", "Tables", "ZygoteRules"]
@@ -287,11 +610,23 @@ git-tree-sha1 = "43b1a4a8f797c1cddadf60499a8a077d4af2cd2d"
 uuid = "d1d4a3ce-64b1-5f1a-9ba4-7e7e69966f35"
 version = "0.1.7"
 
+[[BitTwiddlingConvenienceFunctions]]
+deps = ["Static"]
+git-tree-sha1 = "0c5f81f47bbbcf4aea7b2959135713459170798b"
+uuid = "62783981-4cbd-42fc-bca8-16325de8dc4b"
+version = "0.1.5"
+
 [[Bzip2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "19a35467a82e236ff51bc17a3a44b69ef35185a2"
 uuid = "6e34b625-4abd-537c-b88f-471c36dfa7a0"
 version = "1.0.8+0"
+
+[[CPUSummary]]
+deps = ["CpuId", "IfElse", "Static"]
+git-tree-sha1 = "a7157ab6bcda173f533db4c93fc8a27a48843757"
+uuid = "2a0fbf3d-bb9c-48f3-b0a9-814d99fd7ab9"
+version = "0.1.30"
 
 [[CSV]]
 deps = ["CodecZlib", "Dates", "FilePathsBase", "InlineStrings", "Mmap", "Parsers", "PooledArrays", "SentinelArrays", "Tables", "Unicode", "WeakRefStrings"]
@@ -328,6 +663,12 @@ deps = ["ChainRulesCore", "LinearAlgebra", "Test"]
 git-tree-sha1 = "38f7a08f19d8810338d4f5085211c7dfa5d5bdd8"
 uuid = "9e997f8a-9a97-42d5-a9f1-ce6bfc15e2c0"
 version = "0.1.4"
+
+[[CloseOpenIntervals]]
+deps = ["ArrayInterface", "Static"]
+git-tree-sha1 = "d61300b9895f129f4bd684b2aff97cf319b6c493"
+uuid = "fb6a15b2-703c-40df-9091-08a04967cfa9"
+version = "0.1.11"
 
 [[Clustering]]
 deps = ["Distances", "LinearAlgebra", "NearestNeighbors", "Printf", "Random", "SparseArrays", "Statistics", "StatsBase"]
@@ -412,6 +753,18 @@ version = "1.4.1"
 git-tree-sha1 = "d05d9e7b7aedff4e5b51a029dced05cfb6125781"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
 version = "0.6.2"
+
+[[CovarianceEstimation]]
+deps = ["LinearAlgebra", "Statistics", "StatsBase"]
+git-tree-sha1 = "3c8de95b4e932d76ec8960e12d681eba580e9674"
+uuid = "587fd27a-f159-11e8-2dae-1979310e6154"
+version = "0.2.8"
+
+[[CpuId]]
+deps = ["Markdown"]
+git-tree-sha1 = "32d125af0fb8ec3f8935896122c5e345709909e5"
+uuid = "adafc99b-e345-5852-983c-f28acb93d879"
+version = "0.3.0"
 
 [[Crayons]]
 git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
@@ -701,6 +1054,12 @@ git-tree-sha1 = "129acf094d168394e80ee1dc4bc06ec835e510a3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "2.8.1+1"
 
+[[HostCPUFeatures]]
+deps = ["BitTwiddlingConvenienceFunctions", "IfElse", "Libdl", "Static"]
+git-tree-sha1 = "f64b890b2efa4de81520d2b0fbdc9aadb65bdf53"
+uuid = "3e5b6fbb-0976-4d2c-9146-d79de83f2fb0"
+version = "0.1.13"
+
 [[HypergeometricFunctions]]
 deps = ["DualNumbers", "LinearAlgebra", "OpenLibm_jll", "SpecialFunctions", "Test"]
 git-tree-sha1 = "709d864e3ed6e3545230601f94e11ebc65994641"
@@ -852,9 +1211,27 @@ git-tree-sha1 = "ab9aa169d2160129beb241cb2750ca499b4e90e9"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 version = "0.15.17"
 
+[[LayoutPointers]]
+deps = ["ArrayInterface", "ArrayInterfaceOffsetArrays", "ArrayInterfaceStaticArrays", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static"]
+git-tree-sha1 = "7e34177793212f6d64d045ee47d2883f09fffacc"
+uuid = "10f19ff3-798f-405d-979b-55457f8fc047"
+version = "0.1.12"
+
+[[LazyArrays]]
+deps = ["ArrayLayouts", "FillArrays", "LinearAlgebra", "MacroTools", "MatrixFactorizations", "SparseArrays", "StaticArrays"]
+git-tree-sha1 = "8d9837955df02124bc74f0deb38adbd3a1437846"
+uuid = "5078a376-72f3-5289-bfd5-ec5146d43c02"
+version = "0.22.12"
+
 [[LazyArtifacts]]
 deps = ["Artifacts", "Pkg"]
 uuid = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
+
+[[LazyStack]]
+deps = ["ChainRulesCore", "LinearAlgebra", "NamedDims", "OffsetArrays"]
+git-tree-sha1 = "2eb4a5bf2eb0519ebf40c797ba5637d327863637"
+uuid = "1fad7336-0346-5a1a-a56f-a06ba010965b"
+version = "0.0.8"
 
 [[LeftChildRightSiblingTrees]]
 deps = ["AbstractTrees"]
@@ -960,6 +1337,12 @@ git-tree-sha1 = "5d4d2d9904227b8bd66386c1138cf4d5ffa826bf"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "0.4.9"
 
+[[LoopVectorization]]
+deps = ["ArrayInterface", "ArrayInterfaceCore", "ArrayInterfaceOffsetArrays", "ArrayInterfaceStaticArrays", "CPUSummary", "ChainRulesCore", "CloseOpenIntervals", "DocStringExtensions", "ForwardDiff", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "SIMDDualNumbers", "SIMDTypes", "SLEEFPirates", "SnoopPrecompile", "SpecialFunctions", "Static", "ThreadingUtilities", "UnPack", "VectorizationBase"]
+git-tree-sha1 = "da5317a78e2a9f692730345cf3ff820109f406d3"
+uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
+version = "0.12.141"
+
 [[MCMCChains]]
 deps = ["AbstractMCMC", "AxisArrays", "Compat", "Dates", "Distributions", "Formatting", "IteratorInterfaceExtensions", "KernelDensity", "LinearAlgebra", "MCMCDiagnosticTools", "MLJModelInterface", "NaturalSort", "OrderedCollections", "PrettyTables", "Random", "RecipesBase", "Serialization", "Statistics", "StatsBase", "StatsFuns", "TableTraits", "Tables"]
 git-tree-sha1 = "f5f347b828fd95ece7398f412c81569789361697"
@@ -990,6 +1373,11 @@ git-tree-sha1 = "42324d08725e200c23d4dfb549e0d5d89dede2d2"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 version = "0.5.10"
 
+[[ManualMemory]]
+git-tree-sha1 = "bcaef4fc7a0cfe2cba636d84cda54b5e4e4ca3cd"
+uuid = "d125e4d3-2237-4719-b19c-fa641b8a4667"
+version = "0.1.8"
+
 [[MappedArrays]]
 git-tree-sha1 = "e8b359ef06ec72e8c030463fe02efe5527ee5142"
 uuid = "dbb5928d-eab1-5f90-85c2-b9b0edb7c900"
@@ -998,6 +1386,12 @@ version = "0.4.1"
 [[Markdown]]
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
+
+[[MatrixFactorizations]]
+deps = ["ArrayLayouts", "LinearAlgebra", "Printf", "Random"]
+git-tree-sha1 = "4a02641a5b58e09bd04123ecb6eda64bbaee15b0"
+uuid = "a3b82374-2e81-5b9e-98ce-41277c0e4c87"
+version = "0.9.3"
 
 [[MbedTLS]]
 deps = ["Dates", "MbedTLS_jll", "MozillaCACerts_jll", "Random", "Sockets"]
@@ -1055,6 +1449,12 @@ deps = ["Combinatorics", "DataStructures", "DelimitedFiles", "InvertedIndices", 
 git-tree-sha1 = "2fd5787125d1a93fbe30961bd841707b8a80d75b"
 uuid = "86f7a689-2022-50b4-a561-43c23ac3c673"
 version = "0.9.6"
+
+[[NamedDims]]
+deps = ["AbstractFFTs", "ChainRulesCore", "CovarianceEstimation", "LinearAlgebra", "Pkg", "Requires", "Statistics"]
+git-tree-sha1 = "cb8ebcee2b4e07b72befb9def593baef8aa12f07"
+uuid = "356022a1-0364-5f58-8944-0da4b18d706f"
+version = "0.2.50"
 
 [[NaturalSort]]
 git-tree-sha1 = "eda490d06b9f7c00752ee81cfa451efe55521e21"
@@ -1140,6 +1540,12 @@ git-tree-sha1 = "cf494dca75a69712a72b80bc48f59dcf3dea63ec"
 uuid = "90014a1f-27ba-587c-ab20-58faa44d9150"
 version = "0.11.16"
 
+[[ParetoSmooth]]
+deps = ["AxisKeys", "FFTW", "InteractiveUtils", "LinearAlgebra", "LoopVectorization", "MCMCDiagnosticTools", "Statistics", "Tullio"]
+git-tree-sha1 = "8e4fe110836107e23289838a7c07aa9ae2ff0b5f"
+uuid = "a68b5a21-f429-434e-8bfa-46b447300aac"
+version = "0.2.0"
+
 [[Parsers]]
 deps = ["Dates", "SnoopPrecompile"]
 git-tree-sha1 = "b64719e8b4504983c7fca6cc9db3ebc8acc2a4d6"
@@ -1178,6 +1584,12 @@ deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers"
 git-tree-sha1 = "6a9521b955b816aa500462951aa67f3e4467248a"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 version = "1.36.6"
+
+[[PolyesterWeave]]
+deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
+git-tree-sha1 = "050ca4aa2ca31484b51b849d8180caf8e4449c49"
+uuid = "1d0040c9-8b98-4ee7-8388-3f51789ca0ad"
+version = "0.1.11"
 
 [[PooledArrays]]
 deps = ["DataAPI", "Future"]
@@ -1311,6 +1723,23 @@ version = "0.5.5"
 
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[SIMDDualNumbers]]
+deps = ["ForwardDiff", "IfElse", "SLEEFPirates", "VectorizationBase"]
+git-tree-sha1 = "dd4195d308df24f33fb10dde7c22103ba88887fa"
+uuid = "3cdde19b-5bb0-4aaf-8931-af3e248e098b"
+version = "0.1.1"
+
+[[SIMDTypes]]
+git-tree-sha1 = "330289636fb8107c5f32088d2741e9fd7a061a5c"
+uuid = "94e857df-77ce-4151-89e5-788b33177be4"
+version = "0.1.0"
+
+[[SLEEFPirates]]
+deps = ["IfElse", "Static", "VectorizationBase"]
+git-tree-sha1 = "c8679919df2d3c71f74451321f1efea6433536cc"
+uuid = "476501e8-09a2-5ece-8869-fb82de89a1fa"
+version = "0.6.37"
 
 [[SciMLBase]]
 deps = ["ArrayInterfaceCore", "CommonSolve", "ConstructionBase", "Distributed", "DocStringExtensions", "EnumX", "FunctionWrappersWrappers", "IteratorInterfaceExtensions", "LinearAlgebra", "Logging", "Markdown", "Preferences", "RecipesBase", "RecursiveArrayTools", "RuntimeGeneratedFunctions", "StaticArraysCore", "Statistics", "Tables"]
@@ -1497,6 +1926,12 @@ version = "0.1.6"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[[ThreadingUtilities]]
+deps = ["ManualMemory"]
+git-tree-sha1 = "f8629df51cab659d70d2e5618a430b4d3f37f2c3"
+uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
+version = "0.5.0"
+
 [[Tracker]]
 deps = ["Adapt", "DiffRules", "ForwardDiff", "Functors", "LinearAlgebra", "LogExpFunctions", "MacroTools", "NNlib", "NaNMath", "Optimisers", "Printf", "Random", "Requires", "SpecialFunctions", "Statistics"]
 git-tree-sha1 = "d963aad627fd7af56fbbfee67703c2f7bfee9dd7"
@@ -1514,6 +1949,12 @@ deps = ["Adapt", "ArgCheck", "BangBang", "Baselet", "CompositionsBase", "DefineS
 git-tree-sha1 = "c42fa452a60f022e9e087823b47e5a5f8adc53d5"
 uuid = "28d57a85-8fef-5791-bfe6-a80928e7c999"
 version = "0.4.75"
+
+[[Tullio]]
+deps = ["DiffRules", "LinearAlgebra", "Requires"]
+git-tree-sha1 = "7201bbb4c138c18bf14511c4cc8daeac6a52c148"
+uuid = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
+version = "0.2.14"
 
 [[Turing]]
 deps = ["AbstractMCMC", "AdvancedHMC", "AdvancedMH", "AdvancedPS", "AdvancedVI", "BangBang", "Bijectors", "DataStructures", "Distributions", "DistributionsAD", "DocStringExtensions", "DynamicPPL", "EllipticalSliceSampling", "ForwardDiff", "Libtask", "LinearAlgebra", "LogDensityProblems", "MCMCChains", "NamedArrays", "Printf", "Random", "Reexport", "Requires", "SciMLBase", "Setfield", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "Tracker"]
@@ -1548,6 +1989,12 @@ version = "0.4.1"
 git-tree-sha1 = "34db80951901073501137bdbc3d5a8e7bbd06670"
 uuid = "41fe7b60-77ed-43a1-b4f0-825fd5a5650d"
 version = "0.1.2"
+
+[[VectorizationBase]]
+deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static"]
+git-tree-sha1 = "fc79d0f926592ecaeaee164f6a4ca81b51115c3b"
+uuid = "3d5dd08c-fd9d-11e8-17fa-ed2836048c2f"
+version = "0.21.56"
 
 [[Wayland_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg", "XML2_jll"]
@@ -1798,30 +2245,68 @@ version = "1.4.1+0"
 
 # ╔═╡ Cell order:
 # ╠═38ceaba2-7046-11ed-220d-5d885a93516b
+# ╟─d8f23e60-0660-4f8e-85f1-ac644b885622
+# ╟─1c1daf69-9500-4185-a0bd-d7e3aa51995c
+# ╟─16ee01b2-60d8-40b9-9726-313cdd3c4f50
 # ╠═7c04f8e4-a0c1-4d1e-a2da-a5d593dddad0
+# ╟─c798cf29-23ce-4b49-8e21-21841a069ab0
 # ╠═7dbab6e3-096e-44b8-8a01-e0ee49f9f834
 # ╠═3d73283e-57c0-4467-84bb-51342af36cbd
+# ╟─d94fc354-12f4-40fe-adb2-717336b562d5
 # ╠═3632c05c-688e-4c4a-a540-5e8fc7224892
+# ╟─02b75f7c-ad1e-48dc-9c1c-d7f426df7863
 # ╠═4deeac10-7862-468e-879c-64da3a4355e8
 # ╠═2f6ac3fb-313a-4e06-b6fb-a27a49436d90
+# ╟─7803328e-1158-4413-966f-b63e3f2bcb9c
 # ╠═d245316e-48db-4b7b-980e-5396c7292038
+# ╟─aa2dfd7f-0ad4-430a-a37c-5d8fd0e2e491
 # ╠═b1542b95-b996-4d5a-9d10-a44777fb4242
 # ╠═da5c7a97-53dc-47f5-add9-9d0387d9d208
+# ╟─67a41e31-993c-46da-82fd-7384e3b3edbb
 # ╠═03260756-a291-43d9-9cd7-8c9cf9050bbb
 # ╠═e556c766-546f-4964-bfe4-aca637f2e334
+# ╟─0ef0e2ba-aa0e-4ce0-b8f7-84ecaad8be6d
 # ╠═f8d4d7e4-fef6-4614-89fa-144d253b4d0d
-# ╠═2a632f20-ace6-4612-b207-581be8d429d5
+# ╟─65839ad5-778d-467f-9469-a1b07b912c32
 # ╠═9d09c373-b30f-4aa2-80a4-05c3f5bda7c4
+# ╟─ef2f57cb-555b-4049-9d3a-f05d6a9071b6
 # ╠═7bcb61c6-5d41-4ee9-a399-f8f9599afd52
+# ╟─36f9c011-dee6-4780-96fb-f8cfc2944588
 # ╠═c0552627-8333-4d6a-91fd-0dd93e137ae3
 # ╠═e61ec369-b681-48db-b7da-5ff64d7eefc8
-# ╠═b849eece-5ab4-4fbd-892e-8983de535883
+# ╟─e00baae3-cecd-4483-ab04-f41016b2838d
 # ╠═59f2244d-32d2-41ab-be74-ca17a35ff8a1
+# ╟─67cbfef8-e380-4eee-9d13-9d4b2f07b2a6
 # ╠═6f50e97d-a6a5-4cc7-9915-9a14b161ade1
+# ╟─e166b489-ca4c-438f-b8f9-d3f0ca9467bd
+# ╠═fbb3d17e-c1e8-4ce8-ac7f-9f89f3f8f7b0
+# ╟─79b1269a-1663-4019-becb-26a7ee1b87c4
 # ╠═1efc35f9-41fe-44ab-963e-70232331b982
+# ╟─4b9f2e25-e748-4063-9774-543d064916b0
+# ╠═0d8b65a7-21ab-4b3e-82d0-73876857a571
+# ╟─b598bbe0-6eb1-4700-a820-cd1d28d9e436
 # ╠═1f08c080-5dec-4e5f-8288-757ea28a058d
-# ╠═73ef09db-e52c-444b-a61a-2e978b8dca6b
-# ╠═59d924cd-e936-4118-9310-5e12ecc2331f
-# ╠═89bfe70b-da73-4e47-8ff3-9f9c981de362
+# ╟─b81c2ac4-0455-4e88-af09-4d185d643fd2
+# ╟─92fbb4ed-1abf-42c2-9742-514c1c124641
+# ╠═7e8e54ed-662c-42f7-8905-4fff8bbf240d
+# ╠═8dde6c28-d6aa-450c-a01a-73d7e91c0b9a
+# ╟─ea7068a7-ca32-4564-a076-4e94c3553567
+# ╠═b794bced-05c4-402b-a19c-6b6ec86abfd8
+# ╠═f756a2f8-ce42-48a1-bd11-84e4d57d16e4
+# ╠═27e47916-4169-4a27-a7a7-5aaf37887b92
+# ╟─00a8d58b-d878-4fe1-919a-26368ee6ed43
+# ╠═d75c2f29-f068-477e-a8e6-434163035e8d
+# ╠═c58edcd2-d039-4d1f-bd0e-01e88bea7aea
+# ╠═501b1080-0cb5-4236-a5af-38dab7ec7342
+# ╟─f886f003-7fc2-4721-9b81-d6a666889a1c
+# ╠═4eba55f2-6598-4026-b820-ce1cc1f3686c
+# ╠═c929d097-561d-4cee-a9f8-ea79d956fad9
+# ╟─6295d3c3-89ae-4c4c-83c2-55612e9f5528
+# ╠═556e178a-4cec-4e73-bb4b-f7e294edb4e7
+# ╠═424c0e5a-d010-49ec-90cb-880c8fbec937
+# ╠═788e6138-9512-4e06-b201-4fe60e21d71b
+# ╠═842c5416-598e-4f36-bf47-6ae028ca3a62
+# ╠═24b15ad7-96cf-4da4-9de8-a46b83fc83f7
+# ╠═151996e2-0e8e-4dd9-940a-5491cf51e457
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
